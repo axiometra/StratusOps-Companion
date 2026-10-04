@@ -69,7 +69,7 @@ Even signed, a brand-new publisher can see a SmartScreen warning for the first d
 
 ## Changing the icon
 
-The tray and window icon is `assets/icon.png`; the installer and `.exe` icon is `assets/icon.ico`. Both are currently a placeholder. To use the real logo: replace `assets/icon.png` with a square PNG, at least 256 x 256 pixels, then run `npm run make-icon` and commit both files.
+The tray and window icon is `assets/icon.png`; the installer and `.exe` icon is `assets/icon.ico`. Both are now the Stratus OPs logo. To change them: replace `assets/icon.png` with a square PNG, at least 256 x 256 pixels, then run `npm run make-icon` and commit both files.
 
 ## Troubleshooting
 

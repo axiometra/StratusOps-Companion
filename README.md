@@ -96,8 +96,8 @@ prompts denied, the app may only ever load its own offline page from disk.
   If the page changes, the button may reappear; nothing breaks.
 - The bundled tracker is only as new as the file in `bundled/` when the installer was built; it is
   updated by hand (see RELEASING.md) until the automatic tracker-update stage.
-- Placeholder icon (assets/icon.png and assets/icon.ico) until the real Stratus OPs logo file is
-  supplied; see RELEASING.md.
+- The logo is a detailed picture, so at the smallest sizes (16 px tray icon) it reads as a blue circle
+  with a white S rather than showing the plane and truck.
 - Unsigned until signing secrets are added (RELEASING.md); Windows SmartScreen will warn.
 
 ## If a new version seems to behave like the old one
