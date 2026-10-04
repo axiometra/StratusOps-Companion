@@ -14,6 +14,7 @@ test("defaults are used when nothing valid is saved", () => {
   assert.equal(s.mode, "standard");
   assert.equal(s.alwaysOnTop, true);
   assert.equal(s.opacity, 1);
+  assert.equal(s.startTracker, false, "the tracker never starts by itself unless asked");
   assert.deepEqual(s.sizes.compact, { width: 420, height: 160 });
 });
 
@@ -52,4 +53,9 @@ test("settings survive a save and load, and a missing file is fine", () => {
   const s = sanitise({ mode: "compact", opacity: 0.85, alwaysOnTop: false, trayNoticeShown: true });
   save(file, s);
   assert.deepEqual(load(file), s);
+});
+
+test("the start-tracker choice is remembered, and only a real true counts", () => {
+  assert.equal(sanitise({ startTracker: true }).startTracker, true);
+  assert.equal(sanitise({ startTracker: "yes" }).startTracker, false);
 });

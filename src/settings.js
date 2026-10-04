@@ -18,6 +18,7 @@ const DEFAULTS = Object.freeze({
   alwaysOnTop: true,
   opacity: 1,
   trayNoticeShown: false,
+  startTracker: false, // start the bundled Stratus Link whenever the Companion starts
 });
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -46,6 +47,7 @@ function sanitise(raw) {
     alwaysOnTop: typeof r.alwaysOnTop === "boolean" ? r.alwaysOnTop : DEFAULTS.alwaysOnTop,
     opacity: OPACITY_CHOICES.includes(r.opacity) ? r.opacity : DEFAULTS.opacity,
     trayNoticeShown: r.trayNoticeShown === true,
+    startTracker: r.startTracker === true,
   };
 }
 

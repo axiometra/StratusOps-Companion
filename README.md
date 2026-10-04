@@ -1,10 +1,10 @@
-# Stratus OPs Companion (desktop shell) - Stage C
+# Stratus OPs Companion (desktop shell) - Stage D
 
 A small Windows app that opens https://stratusops.app/companion in its own window.
-Stage A was the minimal secure shell, Stage B added the window behaviour, and Stage C (this
-version, 0.3.0) adds the installer, automatic updates, the GitHub release workflow and signing
-hooks. See **RELEASING.md** for how to publish a version. Stratus Link bundling and tracker
-auto-update come in later stages.
+Stage A was the minimal secure shell, Stage B added the window behaviour, Stage C added the installer, automatic
+updates, the GitHub release workflow and signing hooks, and Stage D (this version, 0.4.0) bundles
+the Stratus Link tracker so the Companion can start and stop it. See **RELEASING.md** for how to
+publish a version. Tracker auto-update comes in a later stage.
 
 ## Run it (any computer with Node.js 20+)
 
@@ -63,6 +63,19 @@ Alt+Left goes back (and returns from the full site to the Companion). The shortc
 **Version**: shown in the tray menu, the tray tooltip, and as "App v<version>" in the Companion page's footer
 (injected by the shell; if the page's footer changes shape it simply isn't shown).
 
+**Stratus Link (bundled tracker)**: the installer carries `StratusLink.exe` (from the `bundled/` folder).
+The tray menu shows whether it is running, and can start it, stop it (with a warning about mid-flight
+tracking), start it automatically with the Companion (off by default), and open the website's
+Connections page to get the tracker token. Details:
+- It runs from a per-user folder (`%LOCALAPPDATA%\\Stratus OPs Companion\\stratus-link`), not the app folder,
+  so a running tracker never blocks an app update.
+- It keeps using the same settings as a separately downloaded Stratus Link
+  (`%APPDATA%\\StratusLink\\config.json`), so the token only has to be entered once.
+- It runs independently of the Companion. Quitting from the tray asks whether to leave it running
+  (default) or stop it too, so tracking is never ended by accident. Updating the Companion leaves it running.
+- If a copy was started some other way, the menu shows "running" and never starts a second one.
+- Windows only. Copies built without the file say "not included in this copy".
+
 **Updates**: copies installed with the installer check for updates after start and every 4 hours,
 download quietly, show a notification, and install on "Restart to update" (tray) or next quit.
 Zip and development copies skip updating.
@@ -81,6 +94,8 @@ prompts denied, the app may only ever load its own offline page from disk.
 - The web page's own layout button is hidden because the shell owns the layout. This relies on
   the button label "Switch to ... layout" and the storage key `stratus-companion-compact`.
   If the page changes, the button may reappear; nothing breaks.
+- The bundled tracker is only as new as the file in `bundled/` when the installer was built; it is
+  updated by hand (see RELEASING.md) until the automatic tracker-update stage.
 - Placeholder icon (assets/icon.png and assets/icon.ico) until the real Stratus OPs logo file is
   supplied; see RELEASING.md.
 - Unsigned until signing secrets are added (RELEASING.md); Windows SmartScreen will warn.

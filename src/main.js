@@ -1,5 +1,7 @@
 "use strict";
 const fs = require("node:fs");
+const { execFile, spawn } = require("node:child_process");
+const { promisify } = require("node:util");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -9,6 +11,7 @@ const {
 const { APP_ORIGIN, START_PATH, FULL_SITE_PATH, COMPANION_PATHS, classifyUrl, classifyForSite } = require("./navigation");
 const { versionFooterScript, backButtonScript } = require("./inject");
 const { createUpdater } = require("./updates");
+const { createTrackerManager } = require("./tracker");
 const store = require("./settings");
 // Read from our own package.json so it is right however the app is launched.
 const PKG = require("../package.json");
@@ -31,6 +34,7 @@ const PAGE_COMPACT_KEY = "stratus-companion-compact";
 let companionWindow = null;
 let tray = null;
 let updater = null;
+let tracker = null;
 let notifiedVersion = null;
 // The app has ONE window. It shows either the small Companion or the full site, and changes
 // size to suit. "view" is which one it is showing right now.
@@ -90,6 +94,7 @@ function start() {
   createCompanionWindow();
   createTray();
   setupUpdates();
+  setupTracker();
   try { globalShortcut.register(COMPACT_SHORTCUT, toggleCompact); } catch { /* tray menu still works */ }
 }
 
@@ -385,9 +390,11 @@ function rebuildTray() {
     { type: "separator" },
     { label: "Sign out / switch account…", click: () => signOut() },
     { type: "separator" },
+    ...trackerMenuItems(),
+    { type: "separator" },
     ...updateMenuItems(),
     { label: `Version ${VERSION}`, enabled: false },
-    { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
+    { label: "Quit", click: quitFromTray },
   ]));
 }
 
@@ -453,6 +460,90 @@ function updateMenuItems() {
   }
 }
 
+/* ---------- bundled Stratus Link tracker ---------- */
+
+function setupTracker() {
+  const localData = process.env.LOCALAPPDATA || app.getPath("appData");
+  tracker = createTrackerManager({
+    bundledExe: app.isPackaged
+      ? path.join(process.resourcesPath, "stratus-link", "StratusLink.exe")
+      : path.join(__dirname, "..", "bundled", "StratusLink.exe"),
+    installDir: path.join(localData, PRODUCT_NAME, "stratus-link"), // per-user, outside the app folder
+    run: (command, args) => promisify(execFile)(command, args, { windowsHide: true }),
+    spawn,
+    onChange: rebuildTray,
+  });
+  tracker.refresh().then(async (st) => {
+    if (settings.startTracker && st.state === "stopped") await startTracker();
+  });
+  tracker.startPolling();
+}
+
+function dialogParent() {
+  return alive(companionWindow) && companionWindow.isVisible() ? companionWindow : undefined;
+}
+
+function showTrackerError(error) {
+  dialog.showMessageBox(dialogParent(), {
+    type: "warning", buttons: ["OK"], title: "Stratus Link",
+    message: "Stratus Link couldn't start", detail: error || "Unknown error",
+  });
+}
+
+async function startTracker() {
+  if (!tracker) return;
+  const result = await tracker.start();
+  if (!result.ok) showTrackerError(result.error);
+  rebuildTray();
+}
+
+async function stopTracker() {
+  if (!tracker) return;
+  const { response } = await dialog.showMessageBox(dialogParent(), {
+    type: "question", buttons: ["Stop Stratus Link", "Cancel"], defaultId: 1, cancelId: 1, title: "Stratus Link",
+    message: "Stop Stratus Link?",
+    detail: "If you are in the middle of a flight, tracking pauses until you start Stratus Link again and press Start tracking.",
+  });
+  if (response !== 0) return;
+  const result = await tracker.stop();
+  if (!result.ok) dialog.showMessageBox(dialogParent(), { type: "warning", buttons: ["OK"], title: "Stratus Link", message: result.error });
+  rebuildTray();
+}
+
+function trackerMenuItems() {
+  const st = tracker ? tracker.status() : { state: "unsupported" };
+  const labels = { running: "running", stopped: "stopped", "not-bundled": "not included in this copy", unsupported: "Windows only" };
+  const items = [{ label: `Stratus Link: ${labels[st.state]}`, enabled: false }];
+  if (st.state === "stopped") items.push({ label: "Start Stratus Link", click: startTracker });
+  if (st.state === "running") items.push({ label: "Stop Stratus Link…", click: stopTracker });
+  if (st.state === "stopped" || st.state === "running") {
+    items.push({
+      label: "Start Stratus Link with Companion", type: "checkbox", checked: settings.startTracker,
+      click: (item) => { settings.startTracker = item.checked; flushSettings(); },
+    });
+    items.push({ label: "Get my tracker token…", click: () => openSite(`${APP_ORIGIN}/connections`) });
+  }
+  return items;
+}
+
+// Quitting the Companion must not silently end a flight's tracking, so ask while Stratus Link runs.
+async function quitFromTray() {
+  if (tracker && tracker.status().state === "running") {
+    const { response } = await dialog.showMessageBox(dialogParent(), {
+      type: "question", buttons: ["Quit Companion only", "Quit both", "Cancel"], defaultId: 0, cancelId: 2, title: "Quit",
+      message: "Stratus Link is still running.",
+      detail: "\"Quit Companion only\" keeps tracking your flight. \"Quit both\" also stops Stratus Link; if you are mid-flight, tracking pauses until you start it again.",
+    });
+    if (response === 2) return;
+    if (response === 1) {
+      const result = await tracker.stop();
+      if (!result.ok) { showTrackerError(result.error); return; }
+    }
+  }
+  isQuitting = true;
+  app.quit();
+}
+
 /* ---------- sign out ---------- */
 
 async function signOut({ confirm = true } = {}) {
@@ -475,7 +566,7 @@ async function signOut({ confirm = true } = {}) {
 if (process.env.STRATUS_TEST === "1") {
   global.__stratus = {
     settings: () => settings, setMode, toggleCompact, openSite, signOut, backToCompanion,
-    companion: () => companionWindow, view: () => view, settingsFile: () => settingsFile,
+    companion: () => companionWindow, view: () => view, settingsFile: () => settingsFile, tracker: () => tracker,
     flush: () => { captureBounds(); flushSettings(); },
   };
 }

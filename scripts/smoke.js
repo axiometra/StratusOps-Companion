@@ -64,6 +64,7 @@ server.listen(PORT, "127.0.0.1", async () => {
   await waitFor(() => c() && c().webContents.getTitle() === "companion standard");
   check("opens Companion in standard layout", c().webContents.getTitle() === "companion standard", c().webContents.getTitle());
   check("always on top by default", c().isAlwaysOnTop() === true);
+  check("the Stratus Link tracker reports a sensible state without crashing (Windows only elsewhere)", ["unsupported", "stopped", "not-bundled"].includes(S.tracker().status().state), S.tracker().status().state);
   const footerText = () => ev(c(), `Array.from(document.querySelectorAll('#foot > *')).map(e => e.textContent).join(' | ')`);
   const pkgVersion = require("../package.json").version;
   check("footer shows the app version between the update time and the link", (await footerText()) === `Updated just now | App v${pkgVersion} | Open full site`, await footerText());
