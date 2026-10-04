@@ -33,3 +33,35 @@ jobs:
 
       - run: npm ci
       - run: npm test
+
+      - name: Build the installer (signed if signing secrets are set)
+        run: npx electron-builder --config electron-builder.config.js --win nsis --x64 --publish never
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+          AZURE_SIGN_PUBLISHER: ${{ secrets.AZURE_SIGN_PUBLISHER }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Check the build produced all three files
+        shell: bash
+        run: |
+          ls -la dist
+          for f in dist/StratusOPsCompanion-Setup.exe dist/StratusOPsCompanion-Setup.exe.blockmap dist/latest.yml; do
+            test -f "$f" || { echo "Missing $f"; exit 1; }
+          done
+
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release create "v$VERSION" --draft --title "$VERSION" --target "$GITHUB_SHA" --generate-notes \
+            dist/StratusOPsCompanion-Setup.exe \
+            dist/StratusOPsCompanion-Setup.exe.blockmap \
+            dist/latest.yml
