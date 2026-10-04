@@ -34,6 +34,18 @@ jobs:
       - run: npm ci
       - run: npm test
 
+      - name: Check the bundled Stratus Link tracker
+        shell: bash
+        run: |
+          if [ ! -f bundled/StratusLink.exe ]; then
+            echo "::warning::bundled/StratusLink.exe is missing, so this installer will NOT include Stratus Link."
+          elif [ "$(head -c 2 bundled/StratusLink.exe)" != "MZ" ]; then
+            echo "bundled/StratusLink.exe is not a Windows program. Upload the StratusLink.exe from INSIDE the downloaded zip, not the zip itself."
+            exit 1
+          else
+            echo "Bundling bundled/StratusLink.exe ($(wc -c < bundled/StratusLink.exe) bytes)"
+          fi
+
       - name: Build the installer (signed if signing secrets are set)
         run: npx electron-builder --config electron-builder.config.js --win nsis --x64 --publish never
         env:
