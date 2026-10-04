@@ -2,9 +2,9 @@
 
 A small Windows app that opens https://stratusops.app/companion in its own window.
 Stage A was the minimal secure shell, Stage B added the window behaviour, Stage C added the installer, automatic
-updates, the GitHub release workflow and signing hooks, and Stage D (this version, 0.4.0) bundles
+updates, the GitHub release workflow and signing hooks, and Stage D (0.4.0), and this version (0.5.0, Stage E) lets the tracker update itself bundles
 the Stratus Link tracker so the Companion can start and stop it. See **RELEASING.md** for how to
-publish a version. Tracker auto-update comes in a later stage.
+publish a version. Tracker updates come from a separate public GitHub repository (see `tracker-releases-repo/`).
 
 ## Run it (any computer with Node.js 20+)
 
@@ -71,14 +71,24 @@ Connections page to get the tracker token. Details:
   so a running tracker never blocks an app update.
 - It keeps using the same settings as a separately downloaded Stratus Link
   (`%APPDATA%\\StratusLink\\config.json`), so the token only has to be entered once.
+- **It updates itself.** Every ~6 hours (and from the tray's "Check for Stratus Link updates…") the Companion reads
+  `tracker.json` from the latest release of the tracker repository set in `src/config.js`
+  (`axiometra/StratusLink-Releases`). A newer version is downloaded in the background and checked: it must come
+  from that repository over https, match the published size and SHA-256 checksum, and be a Windows program.
+  It waits in a `pending` folder and is switched in the next time Stratus Link is stopped and started (by the
+  Companion). If Stratus Link is running the player is told once and can use "Restart Stratus Link to update…"
+  in the tray; a flight is never interrupted. Older or equal versions are ignored. A Companion update never
+  replaces a newer self-updated tracker with its older bundled one (`bundled/version.txt` says what was shipped).
 - It runs independently of the Companion. Quitting from the tray asks whether to leave it running
   (default) or stop it too, so tracking is never ended by accident. Updating the Companion leaves it running.
 - If a copy was started some other way, the menu shows "running" and never starts a second one.
 - Windows only. Copies built without the file say "not included in this copy".
 
-**Updates**: copies installed with the installer check for updates after start and every 4 hours,
-download quietly, show a notification, and install on "Restart to update" (tray) or next quit.
-Zip and development copies skip updating.
+**Updates**: copies installed with the installer check for updates after start and every 4 hours and
+download quietly. When one is ready you get a Windows notification (which Do Not Disturb can hide), an
+**"Update ready - Restart" link in the Companion's footer**, and a tray tooltip and menu item
+("Restart to update"), and the tray icon gets a small orange dot, like Windows Update's. Nothing restarts by itself, so a flight is never interrupted; if you do nothing
+it installs the next time the app is quit. Zip and development copies skip updating.
 
 **Errors**: no connection, or a 500-level server error, shows a "Can't reach Stratus OPs" page
 with automatic retry (15 s), a Retry button and F5. A 404 shows the website's own page.
@@ -94,8 +104,9 @@ prompts denied, the app may only ever load its own offline page from disk.
 - The web page's own layout button is hidden because the shell owns the layout. This relies on
   the button label "Switch to ... layout" and the storage key `stratus-companion-compact`.
   If the page changes, the button may reappear; nothing breaks.
-- The bundled tracker is only as new as the file in `bundled/` when the installer was built; it is
-  updated by hand (see RELEASING.md) until the automatic tracker-update stage.
+- The tracker inside the installer is only the starting copy. Newer versions arrive through the tracker
+  repository; the checksum protects against a damaged download, not a compromised publisher, so sign the
+  tracker (RELEASING.md) before relying on this at scale.
 - The logo is a detailed picture, so at the smallest sizes (16 px tray icon) it reads as a blue circle
   with a white S rather than showing the plane and truck.
 - Unsigned until signing secrets are added (RELEASING.md); Windows SmartScreen will warn.

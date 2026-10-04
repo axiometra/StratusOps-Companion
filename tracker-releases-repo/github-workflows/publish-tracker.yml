@@ -1,0 +1,70 @@
+name: Publish tracker release
+
+# Publishes StratusLink.exe (uploaded to the top level of this repository) as a new DRAFT release,
+# together with a small tracker.json that the Stratus OPs Companion reads. Nothing reaches players
+# until you open the draft on the Releases page and press "Publish release".
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number without a v, for example 0.9.22"
+        required: true
+      notes:
+        description: "What changed (shown on the release page)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version and the file
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "Version must look like 0.9.22 (digits and dots only, no v)."
+            exit 1
+          fi
+          if [ ! -f StratusLink.exe ]; then
+            echo "Upload StratusLink.exe to the top level of this repository first."
+            exit 1
+          fi
+          if [ "$(head -c 2 StratusLink.exe)" != "MZ" ]; then
+            echo "StratusLink.exe is not a Windows program. Upload the .exe from INSIDE the zip, not the zip itself."
+            exit 1
+          fi
+
+      - name: Write tracker.json
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const file = fs.readFileSync("StratusLink.exe");
+            const manifest = {
+              version: process.env.VERSION,
+              sha256: crypto.createHash("sha256").update(file).digest("hex"),
+              size: file.length,
+              url: `https://github.com/${process.env.REPO}/releases/download/v${process.env.VERSION}/StratusLink.exe`,
+            };
+            fs.writeFileSync("tracker.json", JSON.stringify(manifest, null, 2));
+            console.log(manifest);
+          '
+
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          gh release create "v$VERSION" --draft --title "Stratus Link $VERSION" --target "$GITHUB_SHA" \
+            --notes "${NOTES:-Stratus Link $VERSION}" StratusLink.exe tracker.json

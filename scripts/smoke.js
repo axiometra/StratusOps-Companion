@@ -166,6 +166,25 @@ server.listen(PORT, "127.0.0.1", async () => {
   await wait(600);
   check("F5 reloads the page", reloaded);
 
+  // Tray icons: the update version carries an orange dot in the bottom-right corner, the plain one does not.
+  const ti = S.trayImages();
+  check("tray icons are 16px on screen with a sharp 32px version for 200% scaling", !ti.plainEmpty && !ti.dotEmpty && ti.logical.width === 16 && ti.plainPixels2x === 1024 && ti.dotPixels2x === 1024, JSON.stringify(ti));
+  const orange = (c) => c.r > 220 && c.g > 100 && c.g < 180 && c.b < 60;
+  check("the update tray icon has an orange dot, the normal one does not", orange(ti.dotCorner) && !orange(ti.plainCorner), JSON.stringify([ti.plainCorner, ti.dotCorner]));
+
+  // An update waiting for a restart: footer link appears (and survives a redraw); clicking it restarts.
+  const fake = S.fakeUpdate("9.9.9");
+  await waitFor(async () => (await footerText()).includes("Update ready"));
+  check("footer shows an Update ready link in the right place", (await footerText()) === `Updated just now | App v${pkgVersion} | Update ready \u00b7 Restart | Open full site`, await footerText());
+  await ev(c(), `document.getElementById('foot').innerHTML = '<span>Updated 9s ago</span><a href="/dashboard">Open full site</a>'`);
+  await wait(300);
+  check("the update link is re-added if the page redraws its footer", (await footerText()).includes("Update ready"), await footerText());
+  await realClick(c(), "[data-shell-update]");
+  await wait(500);
+  check("clicking it asks the updater to restart (silent install, reopen)", fake.calls.length === 1 && fake.calls[0][0] === true && fake.calls[0][1] === true, JSON.stringify(fake.calls));
+  check("the window stayed on the Companion (the link is never loaded as a page)", c().webContents.getURL().includes("/companion"), c().webContents.getURL());
+  S.fakeUpdate; // (isQuitting is now set; the rest of the run only reads state)
+
   // Server error -> friendly retry page; F5/retry returns when fixed.
   failMode = true;
   c().webContents.reload();

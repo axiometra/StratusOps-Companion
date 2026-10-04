@@ -10,22 +10,28 @@ You do this on GitHub; nothing here needs a Windows PC of your own (GitHub build
 2. **Upload this folder's contents.** Unzip the source zip on your PC. On the new empty repository page click **uploading an existing file**, then drag in everything *inside* the unzipped folder (so that `package.json` and the `.github` folder sit at the top level of the repository, not inside another folder). Write a short message such as "First version" and press **Commit changes**. (Developers can use `git push` instead.)
 3. In the repository go to **Settings, Actions, General, Workflow permissions** and choose **Read and write permissions**. Save.
 
-## Including (and updating) Stratus Link
+## Stratus Link inside the Companion
 
-The installer carries the Stratus Link tracker, but only if the file is in the repository's `bundled` folder:
+The installer carries a **starting copy** of the Stratus Link tracker, from the repository's `bundled` folder:
 
 1. While signed in to Stratus OPs, download the latest Stratus Link zip from the **Connections** page and unzip it.
-2. In the repository open the `bundled` folder, choose **Add file, Upload files**, and drag in the single file
-   **`StratusLink.exe`** from inside the unzip (not the zip itself). Replace the existing one if there is one. Commit.
-   (A browser upload is limited to 25 MB; the tracker is about 13 MB. Each new version adds about that much to the
-   repository's size, which is fine for a long time.)
-3. Run the release as normal. The build says in its log which tracker file it bundled. If the file is missing it
-   prints a warning and builds an installer **without** the tracker; if the file is not a Windows program
-   (for example the zip was uploaded by mistake) it stops with a clear message.
+2. In the repository open the `bundled` folder, choose **Add file, Upload files**, and add the single file
+   **`StratusLink.exe`** from inside the unzip (not the zip), replacing the old one. Also edit `bundled/version.txt`
+   so it contains just that tracker's version number (for example `0.9.21`). Commit.
+3. Run the release as normal. The build log says which tracker file it bundled; if the file is missing it
+   warns and builds an installer without the tracker, and if it is not a Windows program it stops.
 
-Whenever there is a new Stratus Link version, repeat steps 1 and 2 and release a new Companion version. Players who
-install or update get the new tracker automatically the next time they start it from the Companion. (A later stage
-will make the tracker update itself without a Companion release.)
+You only need to refresh the bundled copy occasionally (it is what brand-new installs start with). Day-to-day
+tracker updates do **not** need a Companion release:
+
+## Publishing a new Stratus Link (players update automatically)
+
+Tracker versions are published from a **separate public repository**, `StratusLink-Releases` (a second
+repository is needed because the Companion's own repository publishes the app's installer as "latest").
+Everything you need to set it up is in the `tracker-releases-repo` folder of the Companion source, with its own
+step-by-step README: upload `StratusLink.exe`, run **Publish tracker release** with the version number, check the
+draft it creates, and press **Publish release**. Installed Companions then fetch it within about 6 hours, verify
+it, and use it the next time Stratus Link is started. Version numbers must go up each time.
 
 ## Releasing a version
 

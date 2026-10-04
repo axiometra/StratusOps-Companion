@@ -6,12 +6,14 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
   app, BrowserWindow, Menu, Notification, Tray, dialog, globalShortcut,
-  nativeImage, screen, session, shell, webContents,
+  nativeImage, net, screen, session, shell, webContents,
 } = require("electron");
 const { APP_ORIGIN, START_PATH, FULL_SITE_PATH, COMPANION_PATHS, classifyUrl, classifyForSite } = require("./navigation");
 const { versionFooterScript, backButtonScript } = require("./inject");
 const { createUpdater } = require("./updates");
 const { createTrackerManager } = require("./tracker");
+const { createTrackerFeed } = require("./trackerUpdates");
+const CONFIG = require("./config");
 const store = require("./settings");
 // Read from our own package.json so it is right however the app is launched.
 const PKG = require("../package.json");
@@ -20,6 +22,8 @@ const PRODUCT_NAME = PKG.productName;
 
 const PARTITION = "persist:stratus"; // one sign-in shared by every window of this app
 const BACKGROUND = "#0b0f14";
+// The footer's "Update ready" link points here. The shell intercepts it; nothing is ever loaded.
+const UPDATE_URL = "stratus-update://restart";
 const ICON = path.join(__dirname, "..", "assets", "icon.png");
 const OFFLINE_PAGE = path.join(__dirname, "offline.html");
 const OFFLINE_PATHNAME = pathToFileURL(OFFLINE_PAGE).pathname;
@@ -35,6 +39,8 @@ let companionWindow = null;
 let tray = null;
 let updater = null;
 let tracker = null;
+let trackerFeed = null;
+let trackerNoticeVersion = null;
 let notifiedVersion = null;
 // The app has ONE window. It shows either the small Companion or the full site, and changes
 // size to suit. "view" is which one it is showing right now.
@@ -156,7 +162,7 @@ function createCompanionWindow() {
 
   wireNavigation(companionWindow, classifyUrl);
   wireKeys(companionWindow);
-  companionWindow.webContents.on("did-finish-load", () => { tidyCompanionPage(companionWindow); addBackButton(companionWindow); });
+  companionWindow.webContents.on("did-finish-load", () => { tidyCompanionPage(companionWindow).then(pushUpdateState); addBackButton(companionWindow); });
   // Size the window to suit the page it is showing (Companion = small, anything else = big).
   companionWindow.webContents.on("did-navigate", (_e, url) => syncView(url));
   companionWindow.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => { if (isMainFrame) syncView(url); });
@@ -305,8 +311,13 @@ function wireNavigation(win, classify) {
   // One window: every page of the Stratus OPs site stays inside it; other websites go to the browser.
   const wc = win.webContents;
   // "Open in new tab" links never create stray app windows.
-  wc.setWindowOpenHandler(({ url }) => { route(win, classify(url), url); return { action: "deny" }; });
+  wc.setWindowOpenHandler(({ url }) => {
+    if (url === UPDATE_URL) restartToUpdate();
+    else route(win, classify(url), url);
+    return { action: "deny" };
+  });
   wc.on("will-navigate", (event, url) => {
+    if (url === UPDATE_URL) { event.preventDefault(); restartToUpdate(); return; }
     if (isOfflinePage(url)) return; // our own retry page, and nothing else on disk
     const decision = classify(url);
     if (decision === "internal" || decision === "site") return; // stays in this window; the size follows the page
@@ -352,9 +363,31 @@ function wireKeys(win) {
 
 /* ---------- tray ---------- */
 
+// Tray icons are pre-drawn at 16/24/32/48 px (100%/150%/200%/300% display scaling) so they stay sharp;
+// "update" adds a small orange dot, like the Windows Update tray badge.
+const TRAY_SIZES = [[1, 16], [1.5, 24], [2, 32], [3, 48]];
+const trayImageCache = {};
+function trayImage(withDot) {
+  const key = withDot ? "update" : "plain";
+  if (trayImageCache[key]) return trayImageCache[key];
+  let image;
+  try {
+    image = nativeImage.createEmpty();
+    for (const [scaleFactor, px] of TRAY_SIZES) {
+      const file = path.join(__dirname, "..", "assets", `${withDot ? "tray-update" : "tray"}-${px}.png`);
+      image.addRepresentation({ scaleFactor, width: px, height: px, dataURL: `data:image/png;base64,${fs.readFileSync(file).toString("base64")}` });
+    }
+    if (image.isEmpty()) throw new Error("empty tray image");
+  } catch {
+    image = nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }); // fallback: no dot, still works
+  }
+  trayImageCache[key] = image;
+  return image;
+}
+
 function createTray() {
   try {
-    tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+    tray = new Tray(trayImage(false));
     tray.setToolTip(`Stratus OPs Companion ${VERSION}`);
     tray.on("click", toggleVisibility);
     rebuildTray();
@@ -365,6 +398,11 @@ function createTray() {
 
 function rebuildTray() {
   if (!tray) return;
+  const up = updater ? updater.state() : null;
+  tray.setImage(trayImage(Boolean(up && up.status === "ready"))); // orange dot while an update waits
+  tray.setToolTip(up && up.status === "ready"
+    ? `Stratus OPs Companion ${VERSION} - update ${up.version} ready, right-click to restart`
+    : `Stratus OPs Companion ${VERSION}`);
   const visible = alive(companionWindow) && companionWindow.isVisible();
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: visible ? "Hide Companion" : "Show Companion", click: toggleVisibility },
@@ -419,8 +457,21 @@ function setupUpdates() {
   rebuildTray();
 }
 
+// Tells the Companion page (its footer) whether a downloaded update is waiting for a restart.
+function pushUpdateState() {
+  if (!alive(companionWindow)) return;
+  const st = updater ? updater.state() : { status: "disabled" };
+  const version = st.status === "ready" ? st.version : null;
+  const url = companionWindow.webContents.getURL();
+  if (!url.startsWith(`${APP_ORIGIN}${START_PATH}`)) return;
+  companionWindow.webContents.executeJavaScript(
+    `window.__stratusUpdateVersion = ${JSON.stringify(version)}; window.dispatchEvent(new Event("stratus-shell-update"));`
+  ).catch(() => {});
+}
+
 function handleUpdateChange(st) {
   rebuildTray();
+  pushUpdateState();
   if (st.status === "ready" && st.version !== notifiedVersion && Notification.isSupported()) {
     notifiedVersion = st.version;
     const n = new Notification({
@@ -477,6 +528,66 @@ function setupTracker() {
     if (settings.startTracker && st.state === "stopped") await startTracker();
   });
   tracker.startPolling();
+
+  // Newer Stratus Link versions are published on GitHub and fetched quietly in the background.
+  if (tracker.supported && process.env.STRATUS_TEST !== "1") {
+    trackerFeed = createTrackerFeed({
+      repo: CONFIG.trackerRepo,
+      fetchImpl: (url, options) => net.fetch(url, options), // Chromium's network stack: honours the system proxy
+      manager: tracker,
+      tmpDir: path.join(localData, PRODUCT_NAME, "stratus-link", "downloads"),
+      onChange: () => rebuildTray(),
+    });
+    setTimeout(trackerUpdateTick, 30 * 1000);
+    const timer = setInterval(trackerUpdateTick, 6 * 60 * 60 * 1000);
+    if (timer.unref) timer.unref();
+  }
+}
+
+// Check for a new Stratus Link; if it is downloaded and Stratus Link is not running, switch to it now.
+// If it is running, the update waits (a flight is never interrupted) and the player is told once.
+async function trackerUpdateTick({ notify = true } = {}) {
+  if (!trackerFeed || !tracker) return null;
+  const st = await trackerFeed.check();
+  let applied = false;
+  try { applied = await tracker.applyPendingIfIdle(); } catch { /* retried on the next start or check */ }
+  rebuildTray();
+  const waiting = tracker.pendingInfo();
+  if (notify && waiting.exists && waiting.version && waiting.version !== trackerNoticeVersion && Notification.isSupported()) {
+    trackerNoticeVersion = waiting.version;
+    new Notification({
+      title: "Stratus Link update downloaded",
+      body: `Version ${waiting.version} will be used the next time Stratus Link starts. Right-click the Companion tray icon to restart it now.`,
+    }).show();
+  }
+  return { state: st, applied };
+}
+
+async function checkTrackerNow() {
+  const result = await trackerUpdateTick({ notify: false });
+  if (!result) return;
+  const { state, applied } = result;
+  const waiting = tracker.pendingInfo();
+  let message = "Stratus Link is up to date";
+  let detail = `Version ${tracker.currentVersion() || "unknown"} is the latest.`;
+  if (state.status === "error") { message = "Couldn't check for a Stratus Link update"; detail = `${state.error || "Unknown error"}\n\nCheck your internet connection and try again.`; }
+  else if (applied) { message = "Stratus Link updated"; detail = `Now on version ${tracker.currentVersion()}. It will be used when you start Stratus Link.`; }
+  else if (waiting.exists) { message = "Stratus Link update downloaded"; detail = `Version ${waiting.version} will be used the next time Stratus Link starts. Right-click the tray icon and choose "Restart Stratus Link to update" to switch now.`; }
+  dialog.showMessageBox(dialogParent(), { type: state.status === "error" ? "warning" : "info", buttons: ["OK"], title: "Stratus Link", message, detail });
+}
+
+async function restartTrackerForUpdate() {
+  if (!tracker) return;
+  const { response } = await dialog.showMessageBox(dialogParent(), {
+    type: "question", buttons: ["Restart Stratus Link", "Cancel"], defaultId: 1, cancelId: 1, title: "Stratus Link",
+    message: "Restart Stratus Link to update it?",
+    detail: "If you are in the middle of a flight, tracking pauses until you press Start tracking in the new window.",
+  });
+  if (response !== 0) return;
+  const stopped = await tracker.stop();
+  if (!stopped.ok) { showTrackerError(stopped.error); return; }
+  await tracker.applyPendingIfIdle().catch(() => {});
+  await startTracker();
 }
 
 function dialogParent() {
@@ -513,7 +624,17 @@ async function stopTracker() {
 function trackerMenuItems() {
   const st = tracker ? tracker.status() : { state: "unsupported" };
   const labels = { running: "running", stopped: "stopped", "not-bundled": "not included in this copy", unsupported: "Windows only" };
-  const items = [{ label: `Stratus Link: ${labels[st.state]}`, enabled: false }];
+  const current = tracker && (st.state === "running" || st.state === "stopped") ? tracker.currentVersion() : null;
+  const items = [{ label: `Stratus Link: ${labels[st.state]}${current ? ` (${current})` : ""}`, enabled: false }];
+  const feed = trackerFeed ? trackerFeed.state() : null;
+  const waiting = tracker && tracker.supported ? tracker.pendingInfo() : { exists: false };
+  if (feed && (feed.status === "checking" || feed.status === "downloading") && !waiting.exists) {
+    items.push({ label: feed.status === "downloading" ? `Downloading Stratus Link ${feed.version || ""}…` : "Checking for a Stratus Link update…", enabled: false });
+  } else if (waiting.exists && st.state === "running") {
+    items.push({ label: `Restart Stratus Link to update to ${waiting.version}…`, click: restartTrackerForUpdate });
+  } else if (feed) {
+    items.push({ label: "Check for Stratus Link updates…", click: checkTrackerNow });
+  }
   if (st.state === "stopped") items.push({ label: "Start Stratus Link", click: startTracker });
   if (st.state === "running") items.push({ label: "Stop Stratus Link…", click: stopTracker });
   if (st.state === "stopped" || st.state === "running") {
@@ -568,5 +689,21 @@ if (process.env.STRATUS_TEST === "1") {
     settings: () => settings, setMode, toggleCompact, openSite, signOut, backToCompanion,
     companion: () => companionWindow, view: () => view, settingsFile: () => settingsFile, tracker: () => tracker,
     flush: () => { captureBounds(); flushSettings(); },
+    trayImages: () => {
+      const sample = (img, x, y) => { const b = img.toBitmap({ scaleFactor: 2 }); const i = (y * 32 + x) * 4; return { r: b[i + 2], g: b[i + 1], b: b[i] }; };
+      const plain = trayImage(false), dot = trayImage(true);
+      return { logical: plain.getSize(1), plainPixels2x: plain.toBitmap({ scaleFactor: 2 }).length / 4, dotPixels2x: dot.toBitmap({ scaleFactor: 2 }).length / 4,
+        plainEmpty: plain.isEmpty(), dotEmpty: dot.isEmpty(),
+        plainCorner: sample(plain, 26, 26), dotCorner: sample(dot, 26, 26) };
+    },
+    fakeUpdate: (version) => {
+      const { EventEmitter } = require("node:events");
+      const fake = new EventEmitter();
+      fake.calls = [];
+      fake.quitAndInstall = (...args) => fake.calls.push(args);
+      updater = createUpdater({ autoUpdater: fake, enabled: true, onChange: handleUpdateChange, timers: { setTimeout() {}, setInterval() {} } });
+      fake.emit("update-downloaded", { version });
+      return fake;
+    },
   };
 }

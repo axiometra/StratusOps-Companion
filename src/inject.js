@@ -13,14 +13,33 @@ function versionFooterScript(version) {
       const p = location.pathname.length > 1 && location.pathname.endsWith("/") ? location.pathname.slice(0, -1) : location.pathname;
       if (p !== "/companion") return;
       const footer = document.querySelector("main footer") || document.querySelector("footer");
-      if (!footer || footer.querySelector("[data-shell-version]")) return;
-      const el = document.createElement("span");
-      el.setAttribute("data-shell-version", "");
-      el.textContent = label;
-      el.style.whiteSpace = "nowrap";
-      footer.insertBefore(el, footer.lastElementChild);
+      if (!footer) return;
+      if (!footer.querySelector("[data-shell-version]")) {
+        const el = document.createElement("span");
+        el.setAttribute("data-shell-version", "");
+        el.textContent = label;
+        el.style.whiteSpace = "nowrap";
+        footer.insertBefore(el, footer.lastElementChild);
+      }
+      // The shell sets window.__stratusUpdateVersion when an update has been downloaded and is
+      // waiting for a restart (and clears it otherwise). Clicking the link asks the shell to restart.
+      const wanted = window.__stratusUpdateVersion || null;
+      const link = footer.querySelector("[data-shell-update]");
+      if (wanted && !link) {
+        const a = document.createElement("a");
+        a.setAttribute("data-shell-update", "");
+        a.href = "stratus-update://restart";
+        a.className = "text-primary hover:underline";
+        a.style.whiteSpace = "nowrap";
+        a.textContent = "Update ready \u00b7 Restart";
+        a.title = "Version " + wanted + " has been downloaded. Click to restart and update.";
+        footer.insertBefore(a, footer.lastElementChild);
+      } else if (!wanted && link) {
+        link.remove();
+      }
     };
     apply();
+    window.addEventListener("stratus-shell-update", apply);
     new MutationObserver(apply).observe(document.body, { childList: true, subtree: true });
   })()`;
 }

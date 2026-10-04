@@ -31,7 +31,7 @@ module.exports = {
   files: ["src/**/*", "assets/**/*", "package.json"],
   // The Stratus Link tracker (bundled/StratusLink.exe) is copied next to the app. If the file is
   // not there the installer is still built, just without the tracker.
-  extraResources: [{ from: "bundled", to: "stratus-link", filter: ["StratusLink.exe"] }],
+  extraResources: [{ from: "bundled", to: "stratus-link", filter: ["StratusLink.exe", "version.txt"] }],
   // Releases are uploaded as DRAFTS by default; you publish them by hand (see RELEASING.md).
   publish: owner && repo ? [{ provider: "github", owner, repo }] : undefined,
   win: {
