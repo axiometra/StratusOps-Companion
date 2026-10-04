@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>Stratus OPs Companion</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #0b0f14; color: #e6edf3; font-family: "Segoe UI", system-ui, sans-serif;
+           display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; box-sizing: border-box; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    p { margin: 0 0 16px; color: #9aa7b4; font-size: 13px; }
+    button { background: #1f6feb; color: #fff; border: 0; padding: 8px 18px; font-size: 14px; cursor: pointer; border-radius: 2px; }
+    button:hover { background: #388bfd; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Can't reach Stratus OPs</h1>
+    <p id="detail">Check your internet connection. Retrying automatically…</p>
+    <button id="retry" type="button">Retry now</button>
+  </main>
+  <script>
+    var params = new URLSearchParams(location.search);
+    var target = params.get("target");
+    // Fixed wording per reason; nothing from the URL is ever written into the page.
+    if (params.get("reason") === "server") {
+      document.getElementById("title").textContent = "Stratus OPs isn't responding";
+      document.getElementById("detail").textContent = "The site had a problem. Retrying automatically…";
+    }
+    function retry() { if (target) location.href = target; }
+    document.getElementById("retry").addEventListener("click", retry);
+    setTimeout(retry, 15000);
+  </script>
+</body>
+</html>

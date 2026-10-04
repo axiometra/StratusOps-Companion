@@ -1,0 +1,24 @@
+{
+  "name": "stratus-companion",
+  "version": "0.3.0",
+  "description": "Desktop shell for the Stratus OPs Companion second-screen view",
+  "author": "Axiometra Limited",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "smoke": "electron --user-data-dir=./.smoke-profile scripts/smoke.js",
+    "make-icon": "png-to-ico assets/icon.png > assets/icon.ico",
+    "dist": "electron-builder --config electron-builder.config.js --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.2"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "productName": "Stratus OPs Companion"
+}
